@@ -34,6 +34,7 @@
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/vector_tools.h>
+#include <deal.II/base/table_handler.h>
 
 #include <adapter/adapter.h>
 #include <adapter/parameters.h>
@@ -63,7 +64,7 @@ namespace Linear_Elasticity
     , timer(std::cout, TimerOutput::summary, TimerOutput::wall_times)
     , time(parameters.end_time, parameters.delta_t)
     , adapter(parameters, interface_boundary_id)
-  {}
+  {std::cout << "-------------------------------- " << parameter_file << std::endl;}
 
 
 
@@ -73,8 +74,6 @@ namespace Linear_Elasticity
   {
     dof_handler.clear();
   }
-
-
 
   template <int dim>
   void
@@ -89,6 +88,8 @@ namespace Linear_Elasticity
     // boundary IDs are obtained through colorize = true
     uint id_flap_long_bottom, id_flap_long_top, id_flap_short_bottom,
       id_flap_short_top, id_flap_out_of_plane_bottom, id_flap_out_of_plane_top;
+
+    std::cout << "-------------------------------- PolyDeg: " << parameters.poly_degree << " ShearModulus: " << parameters.mu << std::endl;
 
     // Hron & Turek FSI3 case
     if (parameters.scenario == "FSI3")
@@ -117,11 +118,15 @@ namespace Linear_Elasticity
 
         double flap_xlocation = parameters.flap_location;
 
-        point_bottom = dim == 3 ? Point<dim>(flap_xlocation - 0.05, 0, 0) :
-                                  Point<dim>(flap_xlocation - 0.05, 0);
-        point_tip    = dim == 3 ? Point<dim>(flap_xlocation + 0.05, 1, 0.3) :
-                                  Point<dim>(flap_xlocation + 0.05,
-                                          1); // flap has a 0.1 width
+        // point_bottom = dim == 3 ? Point<dim>(flap_xlocation - 0.025, 0, 0) :
+        //                           Point<dim>(flap_xlocation - 0.025, 0);
+        // point_tip    = dim == 3 ? Point<dim>(flap_xlocation + 0.025, 2, 1) :
+        //                           Point<dim>(flap_xlocation + 0.025, 2); // flap has a 0.1 width
+
+        point_bottom = dim == 3 ? Point<dim>(flap_xlocation - 2, 0, 0) :
+                                  Point<dim>(flap_xlocation - 2, 0);
+        point_tip    = dim == 3 ? Point<dim>(flap_xlocation + 2, 180, 1) :
+                                  Point<dim>(flap_xlocation + 2, 180); // flap has a 0.1 width
 
         // IDs for PF
         id_flap_long_bottom  = 0; // x direction
@@ -245,6 +250,7 @@ namespace Linear_Elasticity
 
 
 
+
   template <int dim>
   void
   ElastoDynamics<dim>::assemble_system()
@@ -283,7 +289,7 @@ namespace Linear_Elasticity
         // points.
         lambda.value_list(fe_values.get_quadrature_points(), lambda_values);
         mu.value_list(fe_values.get_quadrature_points(), mu_values);
-
+        // externalForce(fe_values.get_quadrature_points(), rhs_values);
 
         // Then assemble the entries of the local stiffness matrix
         for (unsigned int i = 0; i < dofs_per_cell; ++i)
@@ -322,19 +328,16 @@ namespace Linear_Elasticity
               }
           }
 
-
         // The transfer from local degrees of freedom into the global matrix
         cell->get_dof_indices(local_dof_indices);
-        for (unsigned int i = 0; i < dofs_per_cell; ++i)
-          {
+        for (unsigned int i = 0; i < dofs_per_cell; ++i){
             for (unsigned int j = 0; j < dofs_per_cell; ++j)
               stiffness_matrix.add(local_dof_indices[i],
                                    local_dof_indices[j],
                                    cell_matrix(i, j));
           }
+    
       }
-
-
     // Here, we use the MatrixCreator to create a mass matrix, which is constant
     // through the whole simulation
     {
@@ -354,15 +357,18 @@ namespace Linear_Elasticity
 
     hanging_node_constraints.condense(stepping_matrix);
 
+
+
     // Calculate contribution of gravity and store them in gravitational_force
-    if (body_force_enabled)
-      {
+    if (1 || body_force_enabled){
+        for (const auto &cell : dof_handler.active_cell_iterators()){std::cout << cell->vertex(0) << ' ' << cell->vertex(1) << std::endl;}
         Vector<double> bf_vector(dim);
         for (uint d = 0; d < dim; ++d)
-          bf_vector[d] = parameters.rho * parameters.body_force[d];
+          bf_vector[d] = 0; //parameters.rho * parameters.body_force[d];
 
         // Create a constant function object
         Functions::ConstantFunction<dim> bf_function(bf_vector);
+
 
         // Create the contribution to the right-hand side vector
         VectorTools::create_right_hand_side(mapping,
@@ -370,6 +376,21 @@ namespace Linear_Elasticity
                                             QGauss<dim>(quad_order),
                                             bf_function,
                                             body_force_vector);
+        std::cout<< "==================== CHECK 2 ========================" << std::endl;
+
+        // std::vector<types::global_dof_index> attchmntpnt_dof_idx(dofs_per_cell);
+        std::cout<< "==================== CHECK 1 ========================" << std::endl;
+        auto attachment_cell(GridTools::find_active_cell_around_point(mapping, dof_handler, Point<dim>(2,180), std::vector<bool>(), 1E-1 ));
+        //Point<dim> realPoint(mapping.transform_unit_to_real_cell, Point<dim> a(0,0);
+        //std::cout << 
+        attchmntpnt_dof_idx.resize(dofs_per_cell);
+        attachment_cell.first->get_dof_indices(attchmntpnt_dof_idx);
+
+        // body_force_vector[local_dof_indices[2]] += -20;
+        // for (unsigned int i = 0; i < dofs_per_cell; ++i){
+        //   //std::cout << "=========================== " << body_force_vector[local_dof_indices[i]] << std::endl;
+        //   body_force_vector[local_dof_indices[i]] += -5;
+        // }
       }
   }
 
@@ -380,7 +401,18 @@ namespace Linear_Elasticity
   ElastoDynamics<dim>::assemble_rhs()
   {
     timer.enter_subsection("Assemble rhs");
+#if 0
+    {
+      std::vector<Point<dim>> dof_coordinates(dof_handler.n_dofs());
+      Point<dim> force(0.1,-0.1);
+      for (unsigned i(0); i != fe.dofs_per_cell; ++i){
+        const unsigned int component_i = fe.system_to_component_index(i).first;
+        std::cout << "================== " << stress[attchmntpnt_dof_idx[i]] << std::endl;
+        stress[attchmntpnt_dof_idx[i]] += force(component_i); 
+      }
+    }
 
+#endif
     // In case we get consistent data
     if (parameters.data_consistent)
       assemble_consistent_loading();
@@ -391,9 +423,38 @@ namespace Linear_Elasticity
     old_displacement = displacement;
 
     // Add contribution of body forces, if necessary
-    if (body_force_enabled)
-      system_rhs.add(1, body_force_vector);
+#if 1
+    if (1 || body_force_enabled){
+        auto tmp_body_force_vector(body_force_vector);
+        attachment_point(0) = 2.0;
+        attachment_point(1) = 180.0;
+        Point<dim> dsplcmnt(0.0,0.0);
+        double alpha(0.0);
+        double force_mag(100.0);
+        Point<dim> origin(2,0.0);
+        std::cout<< "==================== CHECK 4 ========================" << std::endl;
+        for (unsigned i(0); i != fe.dofs_per_cell; ++i){
+          const unsigned int component_i = fe.system_to_component_index(i).first;
+          dsplcmnt(component_i) += displacement[attchmntpnt_dof_idx[i]];
+        }
 
+        dsplcmnt = dsplcmnt/(fe.dofs_per_cell/2.0);
+        attachment_point = attachment_point + dsplcmnt;
+        force = force_mag*((origin - attachment_point)/abs(origin.distance(attachment_point)));
+        // alpha = atan((origin(1) - attachment_point(1))/(origin(0)-attachment_point(0)));
+        // force(0) = force_mag * cos(alpha);
+        // force(1) = force_mag * sin(alpha);
+
+        std::cout << "===================== " << "attachement point: " << attachment_point << ", alpha: " << alpha << ", force test: "<< sqrt(force(0)*force(0)+force(1)*force(1)) <<", force: " << force << std::endl;
+        for (unsigned i(0); i != fe.dofs_per_cell; ++i){
+          const unsigned int component_i = fe.system_to_component_index(i).first;
+          std::cout << "================== " << component_i << " ---> "<< displacement[attchmntpnt_dof_idx[i]] << std::endl;
+          tmp_body_force_vector[attchmntpnt_dof_idx[i]] += force(component_i); 
+        }
+      // system_rhs.add(1, tmp_body_force_vector)
+      system_rhs += tmp_body_force_vector;
+    }
+#endif
     // Assemble global RHS:
     // RHS=(M-theta*(1-theta)*delta_t^2*K)*V_n - delta_t*K* D_n +
     // delta_t*theta*F_n+1 + delta_t*(1-theta)*F_n
@@ -404,7 +465,7 @@ namespace Linear_Elasticity
 
     tmp = system_rhs;
 
-    system_rhs *= time.get_delta_t() * parameters.theta;
+    system_rhs *= time.get_delta_t() * parameters.theta; 
     system_rhs.add(time.get_delta_t() * (1 - parameters.theta), old_stress);
     old_stress = tmp;
 
@@ -418,10 +479,6 @@ namespace Linear_Elasticity
 
     stiffness_matrix.vmult(tmp, old_displacement);
     system_rhs.add(-time.get_delta_t(), tmp);
-
-    hanging_node_constraints.condense(system_rhs);
-
-    // Copy the system_matrix every timestep, since applying the BC deletes
     // certain rows and columns
     system_matrix = 0.0;
     system_matrix.copy_from(stepping_matrix);
@@ -445,10 +502,20 @@ namespace Linear_Elasticity
           fe.component_mask(z_component));
       }
 
+    // for (unsigned i(0); i != fe.dofs_per_cell; ++i){
+    //       const unsigned int component_i = fe.system_to_component_index(i).first;
+    //       std::cout << "-------------------" << component_i << " , " << system_rhs[attchmntpnt_dof_idx[i]] << std::endl;
+    //     }
+
     MatrixTools::apply_boundary_values(boundary_values,
                                        system_matrix,
                                        velocity,
                                        system_rhs);
+
+    // for (unsigned i(0); i != fe.dofs_per_cell; ++i){
+    //       const unsigned int component_i = fe.system_to_component_index(i).first;
+    //       std::cout << "==================" << component_i << " , " << system_rhs[attchmntpnt_dof_idx[i]] << std::endl;
+    //     }
 
     timer.leave_subsection("Assemble rhs");
   }
@@ -605,6 +672,21 @@ namespace Linear_Elasticity
     // the output
     Postprocessor<dim> postprocessor;
     data_out.add_data_vector(displacement, postprocessor);
+
+    TableHandler table_other_data;
+    table_other_data.add_value("a_x", attachment_point(0));
+    table_other_data.add_value("a_y", attachment_point(1));
+    table_other_data.add_value("a_z", 0.0);
+    table_other_data.add_value("f_x", force(0));
+    table_other_data.add_value("f_y", force(1));
+    table_other_data.add_value("f_z", 0.0);
+
+    //std::string path="/home/elage/repos/FSI-sim2real/PreCice/perpendicular-flap/solid-dealii/custom_data/data_" + std::to_string(time.current()) + ".csv"; // save by sim times
+    std::string path="/home/elage/repos/FSI-sim2real/PreCice/perpendicular-flap/solid-dealii/custom_data/data_" + std::to_string(time.get_timestep()/parameters.output_interval) + ".csv"; // save by iteration
+
+    std::ofstream out_file(path);
+    table_other_data.write_text(out_file, TableHandler::TextOutputFormat::org_mode_table);
+    out_file.close();
 
     // visualize the displacements on a displaced grid
     MappingQEulerian<dim> q_mapping(parameters.poly_degree,

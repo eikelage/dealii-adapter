@@ -128,10 +128,14 @@ namespace Linear_Elasticity
     Vector<double> old_stress;
     Vector<double> stress;
     Vector<double> system_rhs;
+    Point<dim> force;
+    Point<dim> attachment_point;
 
     // Body forces e.g. gravity. Values are specified in the input file
     const bool     body_force_enabled;
     Vector<double> body_force_vector;
+    std::vector<types::global_dof_index> attchmntpnt_dof_idx;
+    // std::pair<dealii::TriaActiveIterator<dealii::DoFCellAccessor<2, 2, false> >,Point<dim>> attachment_cell;
 
     // In order to measure some timings
     mutable TimerOutput timer;
