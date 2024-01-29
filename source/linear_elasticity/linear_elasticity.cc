@@ -94,42 +94,35 @@ namespace Linear_Elasticity
     std::cout << "-------------------------------- PolyDeg: " << parameters.poly_degree << " ShearModulus: " << parameters.mu << std::endl;
 
     // Hron & Turek FSI3 case
-    if (parameters.scenario == "JF")
-      {
+    if (parameters.scenario == "JF"){
         n_x = 3;
-        n_y = 20; //must be even for now. See repitions definition
+        n_y = 21;
         n_z = 1;
 
         clamped_mesh_id              = 0;
         out_of_plane_clamped_mesh_id = 4;
 
-        point_bottom   = dim == 3 ? Point<dim>(124, 120, 0) :
-                                  Point<dim>(124, 120);
-        point_tip      = dim == 3 ? Point<dim>(126, 240, 1) :
-                                  Point<dim>(126, 240);
-        point_mid_left = dim == 3 ? Point<dim>(124, 180, 1) :
-                                  Point<dim>(124, 180);                          
-        point_mid_right= dim == 3 ? Point<dim>(126, 180, 1) :
-                                  Point<dim>(126, 180);
+        point_bottom   = dim == 3 ? Point<dim>(124.0, 120.0, 0.0) :
+                                  Point<dim>(124.0, 120.0);                    
+        point_tip= dim == 3 ? Point<dim>(126.0, 240.0, 1.0) :
+                                  Point<dim>(126.0, 240.0);
          // IDs for PF
         id_jf_left   = 0; // x direction
         id_jf_right  = 1;
         id_jf_bottom = 2; // y direction
         id_jf_top    = 3;
 
-        Triangulation<2> triangulation_bottom;
-        Triangulation<2> triangulation_top;
-        
+        const std::vector<unsigned int> repetitions = std::vector<unsigned int>({n_x, n_y});
 
-        const std::vector<unsigned int> repetitions = std::vector<unsigned int>({n_x, n_y/2});
+        GridGenerator::subdivided_hyper_rectangle(triangulation, repetitions, point_bottom, point_tip, true);
 
-        GridGenerator::subdivided_hyper_rectangle(triangulation_bottom,repetitions, point_bottom, point_mid_right, true);
-        GridGenerator::subdivided_hyper_rectangle(triangulation_top,repetitions,point_mid_left, point_tip, true);
+         // Refine all cells global_refinement times
+        const unsigned int global_refinement = 0;
+        triangulation.refine_global(global_refinement);
 
         // Iterate over all cells and set the IDs
-        for (const auto &cell : triangulation_bottom.active_cell_iterators())
+        for (const auto &cell : triangulation.active_cell_iterators())
           for (const auto &face : cell->face_iterators()){
-            std::cout << "ID_tbot ======= " <<face->boundary_id() << std::endl;
             if (face->at_boundary() == true)
               {
                 // Boundaries for the interface
@@ -140,35 +133,8 @@ namespace Linear_Elasticity
                   face->set_boundary_id(clamped_mesh_id);
               }
           }
-
-        for (const auto &cell : triangulation_top.active_cell_iterators())
-          for (const auto &face : cell->face_iterators()){
-          std::cout << "ID_ttop ======= " <<face->boundary_id() << std::endl;
-            if (face->at_boundary() == true)
-              {
-                // Boundaries for the interface
-                if (face->boundary_id() == id_jf_left || face->boundary_id() == id_jf_right || face->boundary_id() == id_jf_top)
-                  face->set_boundary_id(interface_boundary_id);
-                // Boundaries clamped in all directions
-                else if (face->boundary_id() == id_jf_bottom)
-                  face->set_boundary_id(clamped_mesh_id);
-              }
-          }
-        GridGenerator::merge_triangulations({&triangulation_top, &triangulation_bottom}, triangulation, 1.0e-12, true);
-
-        for (const auto &cell : triangulation_top.active_cell_iterators())
-            for (const auto &face : cell->face_iterators())
-                {
-                  std::cout << "ID ======= " <<face->boundary_id() << std::endl;
-                }
-
-        // Refine all cells global_refinement times
-        const unsigned int global_refinement = 0;
-        triangulation.refine_global(global_refinement);
-      }
-
-    else if (parameters.scenario ==  "OBJ")
-      {
+    }
+    else if (parameters.scenario ==  "OBJ"){
         n_x = 5;
         n_y = 5;
         n_z = 1;
@@ -191,8 +157,7 @@ namespace Linear_Elasticity
         // Refine all cells global_refinement times
         const unsigned int global_refinement = 0;
         triangulation.refine_global(global_refinement);
-
-      }
+    }
     else {
       std::cout << "Scenario Undefined" << std::endl;
     }
@@ -367,25 +332,42 @@ namespace Linear_Elasticity
 
     // Calculate contribution of gravity and store them in gravitational_force
     if (1 || body_force_enabled){
-        for (const auto &cell : dof_handler.active_cell_iterators()){std::cout << cell->vertex(0) << ' ' << cell->vertex(1) << std::endl;}
         Vector<double> bf_vector(dim);
         for (uint d = 0; d < dim; ++d)
           bf_vector[d] = 0; //parameters.rho * parameters.body_force[d];
 
         // Create a constant function object
         Functions::ConstantFunction<dim> bf_function(bf_vector);
-        std::cout<< "==================== CHECK 1 ========================" << std::endl;
-        auto attachment_cell(GridTools::find_active_cell_around_point(mapping, dof_handler, Point<dim>(2,180), std::vector<bool>(), 1E-1 ));
-        //Point<dim> realPoint(mapping.transform_unit_to_real_cell, Point<dim> a(0,0);
-        //std::cout << 
-        attchmntpnt_dof_idx.resize(dofs_per_cell);
-        attachment_cell.first->get_dof_indices(attchmntpnt_dof_idx);
+        std::cout<< "==================== CHECK: Attachment Points Top ========================" << std::endl;
+        auto attachment_top_cell(GridTools::find_active_cell_around_point(mapping, dof_handler, Point<dim>(126.0,240.0), std::vector<bool>(), 1E-1 ));
+        std::cout<< "==================== CHECK: Attachment Points Bot ========================" << std::endl;
+        auto attachment_bot_cell(GridTools::find_active_cell_around_point(mapping, dof_handler, Point<dim>(126.0,120.0), std::vector<bool>(), 1E-1 ));
 
-        // body_force_vector[local_dof_indices[2]] += -20;
-        // for (unsigned int i = 0; i < dofs_per_cell; ++i){
-        //   //std::cout << "=========================== " << body_force_vector[local_dof_indices[i]] << std::endl;
-        //   body_force_vector[local_dof_indices[i]] += -5;
-        // }
+
+        clamped_dof_idx.reserve(3*dofs_per_cell);
+        int n_x = 3;
+        double thickness = 2.0;
+
+        for(int i(0); i != n_x; ++i){
+          std::vector<types::global_dof_index> tmp(dofs_per_cell);
+          auto clamped_cells(GridTools::find_active_cell_around_point(mapping, dof_handler, Point<dim>((124.0+i*thickness/n_x),180.0), std::vector<bool>(), 1E-1 ));
+          clamped_cells.first->get_dof_indices(tmp);
+          clamped_dof_idx.insert(std::end(clamped_dof_idx), std::begin(tmp), std::end(tmp));
+          std::cout<< "==================== CHECK: Clamped Cell Idx ========================" << std::endl;          
+          for(int idx: clamped_dof_idx){
+            std::cout << idx << std::endl;
+          }
+        }
+
+        std::cout<< "==================== CHECK: Attachement Point Idx ========================" << std::endl;
+        attchmntpnt_top_dof_idx.resize(dofs_per_cell);
+        attchmntpnt_bot_dof_idx.resize(dofs_per_cell);
+        std::cout<< "-------------------- CHECK: Attachement Point Idx Top --------------------" << std::endl;
+        attachment_top_cell.first->get_dof_indices(attchmntpnt_top_dof_idx);
+        std::cout<< "-------------------- CHECK: Attachement Point Idx Bot --------------------" << std::endl;
+        attachment_bot_cell.first->get_dof_indices(attchmntpnt_bot_dof_idx);
+        std::cout<< "==================== CHECK: assemble_system complete ========================" << std::endl;
+
       }
   }
 
@@ -393,21 +375,9 @@ namespace Linear_Elasticity
   // Process RHS assembly, which is the coupling data (stress) in this case
   template <int dim>
   void
-  ElastoDynamics<dim>::assemble_rhs()
-  {
+  ElastoDynamics<dim>::assemble_rhs(){
+    std::cout<< "==================== CHECK: assemble_rhs start ========================" << std::endl;
     timer.enter_subsection("Assemble rhs");
-#if 0
-    {
-      std::vector<Point<dim>> dof_coordinates(dof_handler.n_dofs());
-      Point<dim> force(0.1,-0.1);
-      for (unsigned i(0); i != fe.dofs_per_cell; ++i){
-        const unsigned int component_i = fe.system_to_component_index(i).first;
-        std::cout << "================== " << stress[attchmntpnt_dof_idx[i]] << std::endl;
-        stress[attchmntpnt_dof_idx[i]] += force(component_i); 
-      }
-    }
-
-#endif
     // In case we get consistent data
     if (parameters.data_consistent)
       assemble_consistent_loading();
@@ -417,39 +387,45 @@ namespace Linear_Elasticity
     old_velocity     = velocity;
     old_displacement = displacement;
 
-    // Add contribution of body forces, if necessary
-#if 1
-    if (1 || body_force_enabled){
-        auto tmp_body_force_vector(body_force_vector);
-        attachment_point(0) = 2.0;
-        attachment_point(1) = 180.0;
-        Point<dim> dsplcmnt(0.0,0.0);
-        double alpha(0.0);
-        double force_mag(100.0);
-        Point<dim> origin(2,0.0);
-        std::cout<< "==================== CHECK 4 ========================" << std::endl;
-        for (unsigned i(0); i != fe.dofs_per_cell; ++i){
-          const unsigned int component_i = fe.system_to_component_index(i).first;
-          dsplcmnt(component_i) += displacement[attchmntpnt_dof_idx[i]];
-        }
+    double force_mag(100.0);
 
-        dsplcmnt = dsplcmnt/(fe.dofs_per_cell/2.0);
-        attachment_point = attachment_point + dsplcmnt;
-        force = force_mag*((origin - attachment_point)/abs(origin.distance(attachment_point)));
-        // alpha = atan((origin(1) - attachment_point(1))/(origin(0)-attachment_point(0)));
-        // force(0) = force_mag * cos(alpha);
-        // force(1) = force_mag * sin(alpha);
+    auto tmp_body_force_vector(body_force_vector);
 
-        std::cout << "===================== " << "attachement point: " << attachment_point << ", alpha: " << alpha << ", force test: "<< sqrt(force(0)*force(0)+force(1)*force(1)) <<", force: " << force << std::endl;
-        for (unsigned i(0); i != fe.dofs_per_cell; ++i){
-          const unsigned int component_i = fe.system_to_component_index(i).first;
-          std::cout << "================== " << component_i << " ---> "<< displacement[attchmntpnt_dof_idx[i]] << std::endl;
-          tmp_body_force_vector[attchmntpnt_dof_idx[i]] += force(component_i); 
-        }
-      // system_rhs.add(1, tmp_body_force_vector)
-      system_rhs += tmp_body_force_vector;
+    attachment_point_top(0) = 126.0; 
+    attachment_point_top(1) = 240.0;
+    attachment_point_bot(0) = 126.0;
+    attachment_point_bot(1) = 120.0;
+
+    Point<dim> dsplcmnt_top(0.0,0.0);
+    Point<dim> dsplcmnt_bot(0.0,0.0);
+
+    Point<dim> origin(126.0,180.0);
+
+
+    std::cout<< "==================== CHECK: Adding Displacements ========================" << std::endl;
+    for (unsigned i(0); i != fe.dofs_per_cell; ++i){
+      const unsigned int component_i = fe.system_to_component_index(i).first;
+      dsplcmnt_top(component_i) += displacement[attchmntpnt_top_dof_idx[i]];
+      dsplcmnt_bot(component_i) += displacement[attchmntpnt_bot_dof_idx[i]];
     }
-#endif
+
+    dsplcmnt_top = dsplcmnt_top/(fe.dofs_per_cell/2.0);
+    dsplcmnt_bot = dsplcmnt_bot/(fe.dofs_per_cell/2.0);
+
+    attachment_point_top = attachment_point_top + dsplcmnt_top;
+    attachment_point_bot = attachment_point_bot + dsplcmnt_bot;
+
+    force_top = force_mag*((origin - attachment_point_top)/abs(origin.distance(attachment_point_top)));
+    force_bot = force_mag*((origin - attachment_point_bot)/abs(origin.distance(attachment_point_bot)));
+
+    for (unsigned i(0); i != fe.dofs_per_cell; ++i){
+      const unsigned int component_i = fe.system_to_component_index(i).first;
+      tmp_body_force_vector[attchmntpnt_top_dof_idx[i]] += force_top(component_i); 
+      tmp_body_force_vector[attchmntpnt_bot_dof_idx[i]] += force_bot(component_i); 
+    }
+    
+    system_rhs += tmp_body_force_vector;
+    
     // Assemble global RHS:
     // RHS=(M-theta*(1-theta)*delta_t^2*K)*V_n - delta_t*K* D_n +
     // delta_t*theta*F_n+1 + delta_t*(1-theta)*F_n
@@ -669,12 +645,19 @@ namespace Linear_Elasticity
     data_out.add_data_vector(displacement, postprocessor);
 
     TableHandler table_other_data;
-    table_other_data.add_value("a_x", attachment_point(0));
-    table_other_data.add_value("a_y", attachment_point(1));
-    table_other_data.add_value("a_z", 0.0);
-    table_other_data.add_value("f_x", force(0));
-    table_other_data.add_value("f_y", force(1));
-    table_other_data.add_value("f_z", 0.0);
+    table_other_data.add_value("ax_top", attachment_point_top(0));
+    table_other_data.add_value("ay_top", attachment_point_top(1));
+    table_other_data.add_value("az_top", 0.0);
+    table_other_data.add_value("fx_top", force_top(0));
+    table_other_data.add_value("fy_top", force_top(1));
+    table_other_data.add_value("fz_top", 0.0);
+
+    table_other_data.add_value("ax_bot", attachment_point_bot(0));
+    table_other_data.add_value("ay_bot", attachment_point_bot(1));
+    table_other_data.add_value("az_bot", 0.0);
+    table_other_data.add_value("fx_bot", force_bot(0));
+    table_other_data.add_value("fy_bot", force_bot(1));
+    table_other_data.add_value("fz_bot", 0.0);
 
     //std::string path="/home/elage/repos/FSI-sim2real/PreCice/perpendicular-flap/solid-dealii/custom_data/data_" + std::to_string(time.current()) + ".csv"; // save by sim times
     std::string path="/home/elage/repos/FSI-sim2real/PreCice/perpendicular-flap/solid-dealii/custom_data/data_" + std::to_string(time.get_timestep()/parameters.output_interval) + ".csv"; // save by iteration
