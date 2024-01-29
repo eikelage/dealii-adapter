@@ -86,7 +86,7 @@ namespace Parameters
    */
   struct PreciceAdapterConfiguration
   {
-    std::string scenario         = "FSI3";
+    std::string scenario         = "JF";
     std::string config_file      = "precice-config.xml";
     std::string participant_name = "dealiisolver";
     std::string mesh_name        = "dealii-mesh";

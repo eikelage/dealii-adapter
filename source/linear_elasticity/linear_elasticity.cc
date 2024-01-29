@@ -84,112 +84,118 @@ namespace Linear_Elasticity
     // Both preconfigured cases consist of a rectangle
     Point<dim> point_bottom;
     Point<dim> point_tip;
+    Point<dim> point_mid_left;
+    Point<dim> point_mid_right;
 
     // boundary IDs are obtained through colorize = true
-    uint id_flap_long_bottom, id_flap_long_top, id_flap_short_bottom,
-      id_flap_short_top, id_flap_out_of_plane_bottom, id_flap_out_of_plane_top;
+    uint id_jf_left, id_jf_right, id_jf_bottom,
+      id_jf_top, id_flap_out_of_plane_bottom, id_flap_out_of_plane_top;
 
     std::cout << "-------------------------------- PolyDeg: " << parameters.poly_degree << " ShearModulus: " << parameters.mu << std::endl;
 
     // Hron & Turek FSI3 case
-    if (parameters.scenario == "FSI3")
-      {
-        // FSI 3
-        n_x          = 18;
-        n_y          = 3;
-        n_z          = 1;
-        point_bottom = dim == 3 ? Point<dim>(0.24899, 0.19, -0.005) :
-                                  Point<dim>(0.24899, 0.19);
-        point_tip =
-          dim == 3 ? Point<dim>(0.6, 0.21, 0.005) : Point<dim>(0.6, 0.21);
-
-        // IDs for FSI3
-        id_flap_long_bottom  = 2; // x direction
-        id_flap_long_top     = 3;
-        id_flap_short_bottom = 0; // y direction
-        id_flap_short_top    = 1;
-      }
-    // PF Case
-    else
+    if (parameters.scenario == "JF")
       {
         n_x = 3;
-        n_y = 18;
+        n_y = 20; //must be even for now. See repitions definition
         n_z = 1;
 
-        double flap_xlocation = parameters.flap_location;
+        clamped_mesh_id              = 0;
+        out_of_plane_clamped_mesh_id = 4;
 
-        // point_bottom = dim == 3 ? Point<dim>(flap_xlocation - 0.025, 0, 0) :
-        //                           Point<dim>(flap_xlocation - 0.025, 0);
-        // point_tip    = dim == 3 ? Point<dim>(flap_xlocation + 0.025, 2, 1) :
-        //                           Point<dim>(flap_xlocation + 0.025, 2); // flap has a 0.1 width
+        point_bottom   = dim == 3 ? Point<dim>(124, 120, 0) :
+                                  Point<dim>(124, 120);
+        point_tip      = dim == 3 ? Point<dim>(126, 240, 1) :
+                                  Point<dim>(126, 240);
+        point_mid_left = dim == 3 ? Point<dim>(124, 180, 1) :
+                                  Point<dim>(124, 180);                          
+        point_mid_right= dim == 3 ? Point<dim>(126, 180, 1) :
+                                  Point<dim>(126, 180);
+         // IDs for PF
+        id_jf_left   = 0; // x direction
+        id_jf_right  = 1;
+        id_jf_bottom = 2; // y direction
+        id_jf_top    = 3;
 
-        point_bottom = dim == 3 ? Point<dim>(flap_xlocation - 2, 0, 0) :
-                                  Point<dim>(flap_xlocation - 2, 0);
-        point_tip    = dim == 3 ? Point<dim>(flap_xlocation + 2, 180, 1) :
-                                  Point<dim>(flap_xlocation + 2, 180); // flap has a 0.1 width
+        Triangulation<2> triangulation_bottom;
+        Triangulation<2> triangulation_top;
+        
 
-        // IDs for PF
-        id_flap_long_bottom  = 0; // x direction
-        id_flap_long_top     = 1;
-        id_flap_short_bottom = 2; // y direction
-        id_flap_short_top    = 3;
+        const std::vector<unsigned int> repetitions = std::vector<unsigned int>({n_x, n_y/2});
+
+        GridGenerator::subdivided_hyper_rectangle(triangulation_bottom,repetitions, point_bottom, point_mid_right, true);
+        GridGenerator::subdivided_hyper_rectangle(triangulation_top,repetitions,point_mid_left, point_tip, true);
+
+        // Iterate over all cells and set the IDs
+        for (const auto &cell : triangulation_bottom.active_cell_iterators())
+          for (const auto &face : cell->face_iterators()){
+            std::cout << "ID_tbot ======= " <<face->boundary_id() << std::endl;
+            if (face->at_boundary() == true)
+              {
+                // Boundaries for the interface
+                if (face->boundary_id() == id_jf_left || face->boundary_id() == id_jf_right || face->boundary_id() == id_jf_bottom)
+                  face->set_boundary_id(interface_boundary_id);
+                // Boundaries clamped in all directions
+                else if (face->boundary_id() == id_jf_top)
+                  face->set_boundary_id(clamped_mesh_id);
+              }
+          }
+
+        for (const auto &cell : triangulation_top.active_cell_iterators())
+          for (const auto &face : cell->face_iterators()){
+          std::cout << "ID_ttop ======= " <<face->boundary_id() << std::endl;
+            if (face->at_boundary() == true)
+              {
+                // Boundaries for the interface
+                if (face->boundary_id() == id_jf_left || face->boundary_id() == id_jf_right || face->boundary_id() == id_jf_top)
+                  face->set_boundary_id(interface_boundary_id);
+                // Boundaries clamped in all directions
+                else if (face->boundary_id() == id_jf_bottom)
+                  face->set_boundary_id(clamped_mesh_id);
+              }
+          }
+        GridGenerator::merge_triangulations({&triangulation_top, &triangulation_bottom}, triangulation, 1.0e-12, true);
+
+        for (const auto &cell : triangulation_top.active_cell_iterators())
+            for (const auto &face : cell->face_iterators())
+                {
+                  std::cout << "ID ======= " <<face->boundary_id() << std::endl;
+                }
+
+        // Refine all cells global_refinement times
+        const unsigned int global_refinement = 0;
+        triangulation.refine_global(global_refinement);
       }
 
-    // Same for both scenarios, only relevant for quasi-2D
-    id_flap_out_of_plane_bottom = 4; // z direction
-    id_flap_out_of_plane_top    = 5;
+    else if (parameters.scenario ==  "OBJ")
+      {
+        n_x = 5;
+        n_y = 5;
+        n_z = 1;
 
-    // Vector of dim values denoting the number of cells to generate in that
-    // direction
-    const std::vector<unsigned int> repetitions =
-      dim == 2 ? std::vector<unsigned int>({n_x, n_y}) :
+        point_bottom = dim == 3 ? Point<dim>(171, 176, 0) :
+                                  Point<dim>(171, 176);
+        point_tip    = dim == 3 ? Point<dim>(179, 184, 1) :
+                                  Point<dim>(179, 184); // flap has a 0.1 width
+        
+        const std::vector<unsigned int> repetitions =
+          dim == 2 ? std::vector<unsigned int>({n_x, n_y}) :
                  std::vector<unsigned int>({n_x, n_y, n_z});
 
-    GridGenerator::subdivided_hyper_rectangle(triangulation,
+        GridGenerator::subdivided_hyper_rectangle(triangulation,
                                               repetitions,
                                               point_bottom,
                                               point_tip,
-                                              /*colorize*/ true);
+                                              false);
 
-    // Refine all cells global_refinement times
-    const unsigned int global_refinement = 0;
-    triangulation.refine_global(global_refinement);
+        // Refine all cells global_refinement times
+        const unsigned int global_refinement = 0;
+        triangulation.refine_global(global_refinement);
 
-    // Set the desired IDs for clamped boundaries and out_of_plane clamped
-    // boundaries. The interface ID (refering to the coupling) is specified in
-    // the Constructor, since it is needed by the Constructor of the Adapter
-    // class.
-    clamped_mesh_id              = 0;
-    out_of_plane_clamped_mesh_id = 4;
-
-    // The IDs must not be the same:
-    std::string error_message(
-      "The interface_id cannot be the same as the clamped one");
-    AssertThrow(clamped_mesh_id != interface_boundary_id,
-                ExcMessage(error_message));
-    AssertThrow(out_of_plane_clamped_mesh_id != interface_boundary_id,
-                ExcMessage(error_message));
-    AssertThrow(interface_boundary_id == adapter.deal_boundary_interface_id,
-                ExcMessage("Wrong interface ID in the Adapter specified"));
-
-    // Iterate over all cells and set the IDs
-    for (const auto &cell : triangulation.active_cell_iterators())
-      for (const auto &face : cell->face_iterators())
-        if (face->at_boundary() == true)
-          {
-            // Boundaries for the interface
-            if (face->boundary_id() == id_flap_short_top ||
-                face->boundary_id() == id_flap_long_bottom ||
-                face->boundary_id() == id_flap_long_top)
-              face->set_boundary_id(interface_boundary_id);
-            // Boundaries clamped in all directions
-            else if (face->boundary_id() == id_flap_short_bottom)
-              face->set_boundary_id(clamped_mesh_id);
-            // Boundaries clamped out-of-plane (z) direction
-            else if (face->boundary_id() == id_flap_out_of_plane_bottom ||
-                     face->boundary_id() == id_flap_out_of_plane_top)
-              face->set_boundary_id(out_of_plane_clamped_mesh_id);
-          }
+      }
+    else {
+      std::cout << "Scenario Undefined" << std::endl;
+    }
   }
 
 
@@ -368,17 +374,6 @@ namespace Linear_Elasticity
 
         // Create a constant function object
         Functions::ConstantFunction<dim> bf_function(bf_vector);
-
-
-        // Create the contribution to the right-hand side vector
-        VectorTools::create_right_hand_side(mapping,
-                                            dof_handler,
-                                            QGauss<dim>(quad_order),
-                                            bf_function,
-                                            body_force_vector);
-        std::cout<< "==================== CHECK 2 ========================" << std::endl;
-
-        // std::vector<types::global_dof_index> attchmntpnt_dof_idx(dofs_per_cell);
         std::cout<< "==================== CHECK 1 ========================" << std::endl;
         auto attachment_cell(GridTools::find_active_cell_around_point(mapping, dof_handler, Point<dim>(2,180), std::vector<bool>(), 1E-1 ));
         //Point<dim> realPoint(mapping.transform_unit_to_real_cell, Point<dim> a(0,0);

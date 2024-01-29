@@ -135,8 +135,8 @@ namespace Parameters
     {
       prm.add_parameter("Scenario",
                         scenario,
-                        "Cases: FSI3 or PF for perpendicular flap",
-                        Patterns::Selection("FSI3|PF"));
+                        "Cases: JellyFish or Object for perpendicular flap",
+                        Patterns::Selection("JF|OBJ"));
 
       prm.add_parameter("precice config-file",
                         config_file,
