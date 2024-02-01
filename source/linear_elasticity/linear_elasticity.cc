@@ -88,25 +88,20 @@ namespace Linear_Elasticity
     Point<dim> point_mid_right;
 
     // boundary IDs are obtained through colorize = true
-    uint id_jf_left, id_jf_right, id_jf_bottom,
-      id_jf_top, id_flap_out_of_plane_bottom, id_flap_out_of_plane_top;
+    uint id_jf_left, id_jf_right, id_jf_bottom, id_jf_top; //, id_flap_out_of_plane_bottom, id_flap_out_of_plane_top;
 
-    std::cout << "-------------------------------- PolyDeg: " << parameters.poly_degree << " ShearModulus: " << parameters.mu << std::endl;
-
-    // Hron & Turek FSI3 case
     if (parameters.scenario == "JF"){
         n_x = 3;
-        n_y = 21;
+        n_y = 61;
         n_z = 1;
 
         clamped_mesh_id              = 0;
-        out_of_plane_clamped_mesh_id = 4;
 
-        point_bottom   = dim == 3 ? Point<dim>(124.0, 120.0, 0.0) :
-                                  Point<dim>(124.0, 120.0);                    
-        point_tip= dim == 3 ? Point<dim>(126.0, 240.0, 1.0) :
-                                  Point<dim>(126.0, 240.0);
-         // IDs for PF
+        point_bottom   = dim == 3 ? Point<dim>(124.0, 120.0, 0.0) * 1E-3 :
+                                    Point<dim>(124.0, 120.0) * 1E-3;                    
+        point_tip      = dim == 3 ? Point<dim>(126.0, 240.0, 1.0) * 1E-3 :
+                                    Point<dim>(126.0, 240.0) * 1E-3;
+
         id_jf_left   = 0; // x direction
         id_jf_right  = 1;
         id_jf_bottom = 2; // y direction
@@ -123,30 +118,27 @@ namespace Linear_Elasticity
         // Iterate over all cells and set the IDs
         for (const auto &cell : triangulation.active_cell_iterators())
           for (const auto &face : cell->face_iterators()){
-            if (face->at_boundary() == true)
-              {
+            if (face->at_boundary() == true){
                 // Boundaries for the interface
                 if (face->boundary_id() == id_jf_left || face->boundary_id() == id_jf_right || face->boundary_id() == id_jf_bottom)
                   face->set_boundary_id(interface_boundary_id);
                 // Boundaries clamped in all directions
                 else if (face->boundary_id() == id_jf_top)
-                  face->set_boundary_id(clamped_mesh_id);
+                  face->set_boundary_id(interface_boundary_id);
               }
           }
     }
     else if (parameters.scenario ==  "OBJ"){
-        n_x = 5;
-        n_y = 5;
+        n_x = 20;
+        n_y = 20;
         n_z = 1;
 
-        point_bottom = dim == 3 ? Point<dim>(171, 176, 0) :
-                                  Point<dim>(171, 176);
-        point_tip    = dim == 3 ? Point<dim>(179, 184, 1) :
-                                  Point<dim>(179, 184); // flap has a 0.1 width
+        point_bottom = dim == 3 ? Point<dim>(171, 176, 0) * 1E-3 :
+                                  Point<dim>(171, 176)* 1E-3;
+        point_tip    = dim == 3 ? Point<dim>(179, 184, 1) * 1E-3 :
+                                  Point<dim>(179, 184) * 1E-3; // flap has a 0.1 width
         
-        const std::vector<unsigned int> repetitions =
-          dim == 2 ? std::vector<unsigned int>({n_x, n_y}) :
-                 std::vector<unsigned int>({n_x, n_y, n_z});
+        const std::vector<unsigned int> repetitions = std::vector<unsigned int>({n_x, n_y});
 
         GridGenerator::subdivided_hyper_rectangle(triangulation,
                                               repetitions,
@@ -157,6 +149,12 @@ namespace Linear_Elasticity
         // Refine all cells global_refinement times
         const unsigned int global_refinement = 0;
         triangulation.refine_global(global_refinement);
+
+        // Iterate over all cells and set the IDs
+        for (const auto &cell : triangulation.active_cell_iterators())
+          for (const auto &face : cell->face_iterators())
+            if (face->at_boundary() == true)
+              face->set_boundary_id(interface_boundary_id);
     }
     else {
       std::cout << "Scenario Undefined" << std::endl;
@@ -204,10 +202,12 @@ namespace Linear_Elasticity
 
     std::cout.imbue(std::locale(""));
     std::cout << "Triangulation:"
+              << "\n\t Scenario: " << parameters.scenario
               << "\n\t Number of active cells: "
               << triangulation.n_active_cells()
               << "\n\t Polynomial degree: " << parameters.poly_degree
               << "\n\t Number of degrees of freedom: " << dof_handler.n_dofs()
+              << "\n\t ShearModulus: " << parameters.mu
               << std::endl;
 
     // Define alias for time dependent variables as described above
@@ -334,40 +334,50 @@ namespace Linear_Elasticity
     if (1 || body_force_enabled){
         Vector<double> bf_vector(dim);
         for (uint d = 0; d < dim; ++d)
-          bf_vector[d] = 0; //parameters.rho * parameters.body_force[d];
+          bf_vector[d] = parameters.rho * parameters.body_force[d];
 
         // Create a constant function object
         Functions::ConstantFunction<dim> bf_function(bf_vector);
-        std::cout<< "==================== CHECK: Attachment Points Top ========================" << std::endl;
-        auto attachment_top_cell(GridTools::find_active_cell_around_point(mapping, dof_handler, Point<dim>(126.0,240.0), std::vector<bool>(), 1E-1 ));
-        std::cout<< "==================== CHECK: Attachment Points Bot ========================" << std::endl;
-        auto attachment_bot_cell(GridTools::find_active_cell_around_point(mapping, dof_handler, Point<dim>(126.0,120.0), std::vector<bool>(), 1E-1 ));
 
+        if(parameters.scenario == "JF"){
+          std::cout<< "==================== CHECK: Attachment Points Top ========================" << std::endl;
+          auto attachment_top_cell(GridTools::find_active_cell_around_point(mapping, dof_handler, Point<dim>(125.0,240.0) * 1E-3, std::vector<bool>(), 1E-1 ));
+          std::cout<< "==================== CHECK: Attachment Points Bot ========================" << std::endl;
+          auto attachment_bot_cell(GridTools::find_active_cell_around_point(mapping, dof_handler, Point<dim>(125.0,120.0) * 1E-3, std::vector<bool>(), 1E-1 ));
 
-        clamped_dof_idx.reserve(3*dofs_per_cell);
-        int n_x = 3;
-        double thickness = 2.0;
+          clamped_dof_idx.reserve(3*dofs_per_cell);
+          int n_x = 3;
+          double thickness = 2.0;
 
-        for(int i(0); i != n_x; ++i){
-          std::vector<types::global_dof_index> tmp(dofs_per_cell);
-          auto clamped_cells(GridTools::find_active_cell_around_point(mapping, dof_handler, Point<dim>((124.0+i*thickness/n_x),180.0), std::vector<bool>(), 1E-1 ));
-          clamped_cells.first->get_dof_indices(tmp);
-          clamped_dof_idx.insert(std::end(clamped_dof_idx), std::begin(tmp), std::end(tmp));
-          std::cout<< "==================== CHECK: Clamped Cell Idx ========================" << std::endl;          
-          for(int idx: clamped_dof_idx){
-            std::cout << idx << std::endl;
+          // for(int i(0); i != n_x; ++i){
+          //   std::vector<types::global_dof_index> tmp(dofs_per_cell);
+          //   auto clamped_cells(GridTools::find_active_cell_around_point(mapping, dof_handler, Point<dim>((124.0+i*thickness/n_x),180.0) * 1E-3, std::vector<bool>(), 1E-1 ));
+          //   clamped_cells.first->get_dof_indices(tmp);
+          //   clamped_dof_idx.insert(std::end(clamped_dof_idx), std::begin(tmp), std::end(tmp));
+          //   std::cout<< "==================== CHECK: Clamped Cell Idx ========================" << std::endl;          
+          //   for(int idx: clamped_dof_idx){
+          //     std::cout << idx << std::endl;
+          //   }
+          // }
+
+          for(int i(0); i != n_x; ++i){
+            std::vector<types::global_dof_index> tmp(dofs_per_cell);
+            auto clamped_cells(GridTools::find_active_cell_around_point(mapping, dof_handler, Point<dim>((124.0+i*thickness/n_x),180.0) * 1E-3, std::vector<bool>(), 1E-1 ));
+            clamped_cells.first->get_dof_indices(tmp);
+            for (const auto &face : clamped_cells.first->face_iterators())
+              if (face->at_boundary() == true)
+                face->set_boundary_id(clamped_mesh_id);
           }
+
+          std::cout<< "==================== CHECK: Attachement Point Idx ========================" << std::endl;
+          attchmntpnt_top_dof_idx.resize(dofs_per_cell);
+          attchmntpnt_bot_dof_idx.resize(dofs_per_cell);
+          std::cout<< "-------------------- CHECK: Attachement Point Idx Top --------------------" << std::endl;
+          attachment_top_cell.first->get_dof_indices(attchmntpnt_top_dof_idx);
+          std::cout<< "-------------------- CHECK: Attachement Point Idx Bot --------------------" << std::endl;
+          attachment_bot_cell.first->get_dof_indices(attchmntpnt_bot_dof_idx);
+          std::cout<< "==================== CHECK: assemble_system complete ========================" << std::endl;
         }
-
-        std::cout<< "==================== CHECK: Attachement Point Idx ========================" << std::endl;
-        attchmntpnt_top_dof_idx.resize(dofs_per_cell);
-        attchmntpnt_bot_dof_idx.resize(dofs_per_cell);
-        std::cout<< "-------------------- CHECK: Attachement Point Idx Top --------------------" << std::endl;
-        attachment_top_cell.first->get_dof_indices(attchmntpnt_top_dof_idx);
-        std::cout<< "-------------------- CHECK: Attachement Point Idx Bot --------------------" << std::endl;
-        attachment_bot_cell.first->get_dof_indices(attchmntpnt_bot_dof_idx);
-        std::cout<< "==================== CHECK: assemble_system complete ========================" << std::endl;
-
       }
   }
 
@@ -387,45 +397,52 @@ namespace Linear_Elasticity
     old_velocity     = velocity;
     old_displacement = displacement;
 
-    double force_mag(100.0);
-
     auto tmp_body_force_vector(body_force_vector);
+    std::cout<< "==================== CHECK: If Statement JF or OBJ ========================" << std::endl;
+    if(parameters.scenario == "JF"){
+      double force_mag(0.1);
 
-    attachment_point_top(0) = 126.0; 
-    attachment_point_top(1) = 240.0;
-    attachment_point_bot(0) = 126.0;
-    attachment_point_bot(1) = 120.0;
+      attachment_point_top(0) = 126.0 * 1E-3;
+      attachment_point_top(1) = 240.0 * 1E-3;
+      attachment_point_bot(0) = 126.0 * 1E-3;
+      attachment_point_bot(1) = 120.0 * 1E-3;
 
-    Point<dim> dsplcmnt_top(0.0,0.0);
-    Point<dim> dsplcmnt_bot(0.0,0.0);
+      Point<dim> dsplcmnt_top(0.0,0.0);
+      Point<dim> dsplcmnt_bot(0.0,0.0);
+      Point<dim> origin(126.0 * 1E-3,180.0 * 1E-3);
 
-    Point<dim> origin(126.0,180.0);
+      std::cout<< "==================== CHECK: Adding Displacements ========================" << std::endl;
+      for (unsigned i(0); i != fe.dofs_per_cell; ++i){
+        const unsigned int component_i = fe.system_to_component_index(i).first;
+        dsplcmnt_top(component_i) += displacement[attchmntpnt_top_dof_idx[i]];
+        dsplcmnt_bot(component_i) += displacement[attchmntpnt_bot_dof_idx[i]];
+      }
 
+      dsplcmnt_top = dsplcmnt_top/(fe.dofs_per_cell/2.0);
+      dsplcmnt_bot = dsplcmnt_bot/(fe.dofs_per_cell/2.0);
 
-    std::cout<< "==================== CHECK: Adding Displacements ========================" << std::endl;
-    for (unsigned i(0); i != fe.dofs_per_cell; ++i){
-      const unsigned int component_i = fe.system_to_component_index(i).first;
-      dsplcmnt_top(component_i) += displacement[attchmntpnt_top_dof_idx[i]];
-      dsplcmnt_bot(component_i) += displacement[attchmntpnt_bot_dof_idx[i]];
-    }
+      attachment_point_top = attachment_point_top + dsplcmnt_top;
+      attachment_point_bot = attachment_point_bot + dsplcmnt_bot;
 
-    dsplcmnt_top = dsplcmnt_top/(fe.dofs_per_cell/2.0);
-    dsplcmnt_bot = dsplcmnt_bot/(fe.dofs_per_cell/2.0);
+      force_top = force_mag*((origin - attachment_point_top)/abs(origin.distance(attachment_point_top)));
+      force_top(0) = -force_top(1);
+      force_top(1) = force_top(0);
 
-    attachment_point_top = attachment_point_top + dsplcmnt_top;
-    attachment_point_bot = attachment_point_bot + dsplcmnt_bot;
+      force_bot = force_mag*((origin - attachment_point_bot)/abs(origin.distance(attachment_point_bot)));
+      force_bot(0) = force_bot(1);
+      force_bot(1) = -force_top(0);
+      
 
-    force_top = force_mag*((origin - attachment_point_top)/abs(origin.distance(attachment_point_top)));
-    force_bot = force_mag*((origin - attachment_point_bot)/abs(origin.distance(attachment_point_bot)));
-
-    for (unsigned i(0); i != fe.dofs_per_cell; ++i){
-      const unsigned int component_i = fe.system_to_component_index(i).first;
-      tmp_body_force_vector[attchmntpnt_top_dof_idx[i]] += force_top(component_i); 
-      tmp_body_force_vector[attchmntpnt_bot_dof_idx[i]] += force_bot(component_i); 
+      for (unsigned i(0); i != fe.dofs_per_cell; ++i){
+        const unsigned int component_i = fe.system_to_component_index(i).first;
+        tmp_body_force_vector[attchmntpnt_top_dof_idx[i]] += force_top(component_i); 
+        tmp_body_force_vector[attchmntpnt_bot_dof_idx[i]] += force_bot(component_i); 
+      }
     }
     
     system_rhs += tmp_body_force_vector;
-    
+    std::cout<< "==================== CHECK: Force Application Done ========================" << std::endl;
+
     // Assemble global RHS:
     // RHS=(M-theta*(1-theta)*delta_t^2*K)*V_n - delta_t*K* D_n +
     // delta_t*theta*F_n+1 + delta_t*(1-theta)*F_n
@@ -453,7 +470,7 @@ namespace Linear_Elasticity
     // certain rows and columns
     system_matrix = 0.0;
     system_matrix.copy_from(stepping_matrix);
-
+  
     // Set Dirichlet BCs:
     // clamped in all directions
     std::map<types::global_dof_index, double> boundary_values;
@@ -461,32 +478,13 @@ namespace Linear_Elasticity
                                              clamped_mesh_id,
                                              Functions::ZeroFunction<dim>(dim),
                                              boundary_values);
-    if (dim == 3)
-      {
-        const FEValuesExtractors::Scalar z_component(2);
-        // clamped out_of_plane
-        VectorTools::interpolate_boundary_values(
-          dof_handler,
-          out_of_plane_clamped_mesh_id,
-          Functions::ZeroFunction<dim>(dim),
-          boundary_values,
-          fe.component_mask(z_component));
-      }
-
-    // for (unsigned i(0); i != fe.dofs_per_cell; ++i){
-    //       const unsigned int component_i = fe.system_to_component_index(i).first;
-    //       std::cout << "-------------------" << component_i << " , " << system_rhs[attchmntpnt_dof_idx[i]] << std::endl;
-    //     }
-
+    
+    std::cout<< "==================== CHECK: Applying BC ========================" << std::endl;
     MatrixTools::apply_boundary_values(boundary_values,
                                        system_matrix,
                                        velocity,
                                        system_rhs);
-
-    // for (unsigned i(0); i != fe.dofs_per_cell; ++i){
-    //       const unsigned int component_i = fe.system_to_component_index(i).first;
-    //       std::cout << "==================" << component_i << " , " << system_rhs[attchmntpnt_dof_idx[i]] << std::endl;
-    //     }
+    
 
     timer.leave_subsection("Assemble rhs");
   }
@@ -660,7 +658,11 @@ namespace Linear_Elasticity
     table_other_data.add_value("fz_bot", 0.0);
 
     //std::string path="/home/elage/repos/FSI-sim2real/PreCice/perpendicular-flap/solid-dealii/custom_data/data_" + std::to_string(time.current()) + ".csv"; // save by sim times
-    std::string path="/home/elage/repos/FSI-sim2real/PreCice/perpendicular-flap/solid-dealii/custom_data/data_" + std::to_string(time.get_timestep()/parameters.output_interval) + ".csv"; // save by iteration
+    std::string path;
+    if(parameters.scenario == "OBJ")
+      path="/home/elage/repos/FSI-sim2real/PreCice/multi_body_jelly_fish/simFiles/solid-obj-dealii/custom_data/data_" + std::to_string(time.get_timestep()/parameters.output_interval) + ".csv"; // save by iteration
+    else
+      path="/home/elage/repos/FSI-sim2real/PreCice/multi_body_jelly_fish/simFiles/solid-jf-dealii/custom_data/data_" + std::to_string(time.get_timestep()/parameters.output_interval) + ".csv"; // save by iteration
 
     std::ofstream out_file(path);
     table_other_data.write_text(out_file, TableHandler::TextOutputFormat::org_mode_table);
