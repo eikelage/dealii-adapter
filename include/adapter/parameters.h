@@ -35,6 +35,7 @@ namespace Parameters
     double               mu     = 1538462;
     double               lambda = -1;
     double               rho    = 1000;
+    double               f_mag = 0.0;
     Tensor<1, 3, double> body_force;
 
     void

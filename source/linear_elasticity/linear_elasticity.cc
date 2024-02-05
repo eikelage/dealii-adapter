@@ -79,7 +79,7 @@ namespace Linear_Elasticity
   void
   ElastoDynamics<dim>::make_grid()
   {
-    uint n_x, n_y, n_z;
+    uint n_x, n_y;
 
     // Both preconfigured cases consist of a rectangle
     Point<dim> point_bottom;
@@ -93,7 +93,6 @@ namespace Linear_Elasticity
     if (parameters.scenario == "JF"){
         n_x = 3;
         n_y = 61;
-        n_z = 1;
 
         clamped_mesh_id              = 0;
 
@@ -131,7 +130,6 @@ namespace Linear_Elasticity
     else if (parameters.scenario ==  "OBJ"){
         n_x = 20;
         n_y = 20;
-        n_z = 1;
 
         point_bottom = dim == 3 ? Point<dim>(171, 176, 0) * 1E-3 :
                                   Point<dim>(171, 176)* 1E-3;
@@ -341,9 +339,9 @@ namespace Linear_Elasticity
 
         if(parameters.scenario == "JF"){
           std::cout<< "==================== CHECK: Attachment Points Top ========================" << std::endl;
-          auto attachment_top_cell(GridTools::find_active_cell_around_point(mapping, dof_handler, Point<dim>(125.0,240.0) * 1E-3, std::vector<bool>(), 1E-1 ));
+          auto attachment_top_cell(GridTools::find_active_cell_around_point(mapping, dof_handler, Point<dim>(126.0,240.0) * 1E-3, std::vector<bool>(), 1E-1 ));
           std::cout<< "==================== CHECK: Attachment Points Bot ========================" << std::endl;
-          auto attachment_bot_cell(GridTools::find_active_cell_around_point(mapping, dof_handler, Point<dim>(125.0,120.0) * 1E-3, std::vector<bool>(), 1E-1 ));
+          auto attachment_bot_cell(GridTools::find_active_cell_around_point(mapping, dof_handler, Point<dim>(126.0,120.0) * 1E-3, std::vector<bool>(), 1E-1 ));
 
           clamped_dof_idx.reserve(3*dofs_per_cell);
           int n_x = 3;
@@ -398,20 +396,17 @@ namespace Linear_Elasticity
     old_displacement = displacement;
 
     auto tmp_body_force_vector(body_force_vector);
-    std::cout<< "==================== CHECK: If Statement JF or OBJ ========================" << std::endl;
     if(parameters.scenario == "JF"){
-      double force_mag(0.1);
-
+      double force_mag(0.0);
       attachment_point_top(0) = 126.0 * 1E-3;
       attachment_point_top(1) = 240.0 * 1E-3;
       attachment_point_bot(0) = 126.0 * 1E-3;
       attachment_point_bot(1) = 120.0 * 1E-3;
-
       Point<dim> dsplcmnt_top(0.0,0.0);
       Point<dim> dsplcmnt_bot(0.0,0.0);
       Point<dim> origin(126.0 * 1E-3,180.0 * 1E-3);
+      Point<dim> tmp;
 
-      std::cout<< "==================== CHECK: Adding Displacements ========================" << std::endl;
       for (unsigned i(0); i != fe.dofs_per_cell; ++i){
         const unsigned int component_i = fe.system_to_component_index(i).first;
         dsplcmnt_top(component_i) += displacement[attchmntpnt_top_dof_idx[i]];
@@ -421,18 +416,47 @@ namespace Linear_Elasticity
       dsplcmnt_top = dsplcmnt_top/(fe.dofs_per_cell/2.0);
       dsplcmnt_bot = dsplcmnt_bot/(fe.dofs_per_cell/2.0);
 
+      std::cout << "------------ Displacement Top: (" << dsplcmnt_top(0) << ", " << dsplcmnt_top(1) << ")" << std::endl;
+
       attachment_point_top = attachment_point_top + dsplcmnt_top;
       attachment_point_bot = attachment_point_bot + dsplcmnt_bot;
-
-      force_top = force_mag*((origin - attachment_point_top)/abs(origin.distance(attachment_point_top)));
-      force_top(0) = -force_top(1);
-      force_top(1) = force_top(0);
-
-      force_bot = force_mag*((origin - attachment_point_bot)/abs(origin.distance(attachment_point_bot)));
-      force_bot(0) = force_bot(1);
-      force_bot(1) = -force_top(0);
+      force_mag = parameters.f_mag;
       
+      if(time.current() < 0.1 && 0){
+        // force_mag = 0.1;
+        force_top(0) = force_mag;
+        force_top(1) = 0.0;
+        force_bot(0) = force_mag;
+        force_bot(1) = 0.0;
+      }
+      else if (time.current() > 0.0 && time.current() < 0.8){
+        force_mag = time.current()/0.8 * parameters.f_mag;
+        force_top = force_mag*((origin - attachment_point_top)/abs(origin.distance(attachment_point_top)));
+        tmp = force_top;
+        force_top(0) = -tmp(1);
+        force_top(1) = tmp(0);
+        force_bot = force_mag*((origin - attachment_point_bot)/abs(origin.distance(attachment_point_bot)));
+        tmp = force_bot;
+        force_bot(0) = tmp(1);
+        force_bot(1) = -tmp(0);
+      }
+      else{
+        force_mag = (1-(time.current()-0.8)/0.2) * parameters.f_mag;
+        force_top(0) = 0;
+        force_top(1) = 0.0;
+        force_bot(0) = 0;
+        force_bot(1) = 0.0;
+      }
 
+      // force_top = force_mag*((origin - attachment_point_top)/abs(origin.distance(attachment_point_top)));
+      // tmp = force_top;
+      // force_top(0) = -tmp(1);
+      // force_top(1) = tmp(0);
+      // force_bot = force_mag*((origin - attachment_point_bot)/abs(origin.distance(attachment_point_bot)));
+      // tmp = force_bot;
+      // force_bot(0) = tmp(1);
+      // force_bot(1) = -tmp(0);
+      
       for (unsigned i(0); i != fe.dofs_per_cell; ++i){
         const unsigned int component_i = fe.system_to_component_index(i).first;
         tmp_body_force_vector[attchmntpnt_top_dof_idx[i]] += force_top(component_i); 

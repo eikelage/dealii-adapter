@@ -44,6 +44,8 @@ namespace Parameters
 
       prm.add_parameter("rho", rho, "density", Patterns::Double(0.0));
 
+      prm.add_parameter("force", f_mag, "force", Patterns::Double(0.0));
+
       prm.add_parameter("body forces",
                         body_force,
                         "body forces x,y,z",
